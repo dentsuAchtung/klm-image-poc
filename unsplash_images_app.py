@@ -29,7 +29,7 @@ def fetch_images_unsplash(access_key, query, page, per_page=20):
 
 # Streamlit App
 def main():
-    st.title("Unsplash Image Explorer")
+    st.title("KLM Image Explorer")
 
     # User input for city and attraction
     city = st.text_input("Enter city:")
