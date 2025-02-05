@@ -8,6 +8,8 @@ load_dotenv()
 
 # Access the Unsplash API key
 access_key = os.getenv("UNSPLASH_ACCESS_KEY")
+secret_key = os.getenv("UNSPLASH_SECRET_KEY")
+
 
 # Function to fetch images from Unsplash API
 def fetch_images_unsplash(access_key, query, page, per_page=20):
