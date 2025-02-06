@@ -3,90 +3,202 @@ import requests
 from dotenv import load_dotenv
 import os
 
-# Load environment variables from .env file
 load_dotenv()
-
-# Access the Unsplash API key
 access_key = os.getenv("UNSPLASH_ACCESS_KEY")
 secret_key = os.getenv("UNSPLASH_SECRET_KEY")
 
 
-# Function to fetch images from Unsplash API
-def fetch_images_unsplash(access_key, query, page, per_page=20):
+def fetch_images(query, page=1, per_page=5):
+    """Fetch a page of results from the Unsplash API."""
     url = "https://api.unsplash.com/search/photos"
-    headers = {"Authorization": f"Client-ID {access_key}"}
     params = {
         "query": query,
         "page": page,
         "per_page": per_page,
+        "client_id": access_key
     }
-    response = requests.get(url, headers=headers, params=params)
+    response = requests.get(url, params=params)
     if response.status_code == 200:
         return response.json()
     else:
-        st.error(f"Failed to fetch images: {response.status_code}")
-        return None
+        st.error(f"Unsplash API error {response.status_code}: {response.text}")
+        return {}
 
-# Streamlit App
+
 def main():
-    st.title("KLM Image Explorer")
+    st.set_page_config(layout="wide")
+    st.title("KPN Image Explorer")
 
-    # User input for city and attraction
-    city = st.text_input("Enter city:")
-    attraction = st.text_input("Enter attraction:")
+    # --- Custom CSS to style expanders and buttons ---
+    st.markdown(
+        """
+        <style>
+        /* Style the expanders with a border and padding */
+        .st-expander {
+            border: 2px solid #ccc;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        /* Optionally hide the expander arrow if not needed */
+        .st-expanderHeader .st-expanderArrow {
+            display: none;
+        }
+        /* Make buttons smaller */
+        button[data-baseweb="button"] {
+            font-size: 0.8rem;
+            padding: 0.25rem 0.5rem;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    # Initialize session state variables
-    if "page" not in st.session_state:
-        st.session_state.page = 1
-    if "selected_image" not in st.session_state:
-        st.session_state.selected_image = None
-    if "images" not in st.session_state:
-        st.session_state.images = []
+    # ---------- Initialize Session State ----------
+    # City
+    if "city_query" not in st.session_state:
+        st.session_state.city_query = ""
+    if "city_page" not in st.session_state:
+        st.session_state.city_page = 1
+    if "city_total" not in st.session_state:
+        st.session_state.city_total = 0
+    if "city_images" not in st.session_state:
+        st.session_state.city_images = []
+    if "selected_city_image" not in st.session_state:
+        st.session_state.selected_city_image = None
 
-    # Search button
-    if st.button("Search"):
-        if city and attraction:
-            query = f"{city} {attraction}"
-            st.session_state.page = 1  # Reset to the first page
-            data = fetch_images_unsplash(access_key, query, st.session_state.page)
-            if data:
-                st.session_state.images = data.get("results", [])
-                st.session_state.selected_image = None
-        else:
-            st.error("Please fill all fields.")
+    # Attraction
+    if "attraction_query" not in st.session_state:
+        st.session_state.attraction_query = ""
+    if "attraction_page" not in st.session_state:
+        st.session_state.attraction_page = 1
+    if "attraction_total" not in st.session_state:
+        st.session_state.attraction_total = 0
+    if "attraction_images" not in st.session_state:
+        st.session_state.attraction_images = []
+    if "selected_attraction_image" not in st.session_state:
+        st.session_state.selected_attraction_image = None
 
-    # Display search results if images are available
-    if st.session_state.images:
-        st.write(f"Showing results for: {city} {attraction} (Page {st.session_state.page})")
-        cols = st.columns(5)
+    # ========== City Search Section ==========
+    st.subheader("City Search")
+    city_input = st.text_input("Enter city", key="city_query")
 
-        for i, image in enumerate(st.session_state.images):
-            image_url = image["urls"]["regular"]
-            photographer = image["user"]["name"]
+    if st.button("Search City"):
+        st.session_state.city_page = 1
+        data = fetch_images(st.session_state.city_query, page=1, per_page=5)
+        st.session_state.city_images = data.get("results", [])
+        st.session_state.city_total = data.get("total", 0)
+        st.session_state.selected_city_image = None
+        st.rerun()
 
-            with cols[i % 5]:
-                st.image(image_url, use_container_width=True)
-                if st.button("Select", key=f"select_{image['id']}"):
-                    st.session_state.selected_image = (image_url, photographer)
+    city_col, destination_col = st.columns([3, 2], gap="large")
 
-        # Pagination controls
-        col1, col2 = st.columns(2)
-        if col1.button("Previous Page"):
-            st.session_state.page = max(1, st.session_state.page - 1)
-            data = fetch_images_unsplash(access_key, f"{city} {attraction}", st.session_state.page)
-            if data:
-                st.session_state.images = data.get("results", [])
-        if col2.button("Next Page"):
-            st.session_state.page += 1
-            data = fetch_images_unsplash(access_key, f"{city} {attraction}", st.session_state.page)
-            if data:
-                st.session_state.images = data.get("results", [])
+    with city_col:
+        if st.session_state.city_query and st.session_state.city_images:
+            with st.expander("City Results", expanded=True):
+                st.write(f"Showing **{st.session_state.city_query}**, page {st.session_state.city_page}")
 
-    # Display selected image
-    if st.session_state.selected_image:
-        st.write("### Selected Image:")
-        selected_url, photographer = st.session_state.selected_image
-        st.image(selected_url, caption=f"By {photographer}", use_container_width=True)
+                # ---------- Display the current page's row of images ----------
+                images = st.session_state.city_images
+                img_cols = st.columns(len(images))
+                for i, img_data in enumerate(images):
+                    with img_cols[i]:
+                        thumb_url = img_data["urls"]["thumb"]
+                        st.image(thumb_url, use_container_width=True)
+                        if st.button("Select", key=f"select_city_page{st.session_state.city_page}_{i}"):
+                            st.session_state.selected_city_image = img_data["urls"]["regular"]
+                            st.rerun()
+
+                # ---------- Pagination Arrows (aligned left and closer together) ----------
+                pages = (st.session_state.city_total // 5) + 1
+                # Create a three-column layout: two narrow columns for the buttons and one wide spacer.
+                col_btn1, col_btn2, col_spacer = st.columns([1, 1, 8])
+                with col_btn1:
+                    if st.button("◀", key="city_prev") and st.session_state.city_page > 1:
+                        st.session_state.city_page -= 1
+                        data = fetch_images(st.session_state.city_query,
+                                            page=st.session_state.city_page,
+                                            per_page=5)
+                        st.session_state.city_images = data.get("results", [])
+                        st.session_state.city_total = data.get("total", 0)
+                        st.rerun()
+                with col_btn2:
+                    if st.button("▶", key="city_next") and st.session_state.city_page < pages:
+                        st.session_state.city_page += 1
+                        data = fetch_images(st.session_state.city_query,
+                                            page=st.session_state.city_page,
+                                            per_page=5)
+                        st.session_state.city_images = data.get("results", [])
+                        st.session_state.city_total = data.get("total", 0)
+                        st.rerun()
+
+    with destination_col:
+        st.write("**Destination**")
+        if st.session_state.selected_city_image:
+            st.image(st.session_state.selected_city_image, use_container_width=True)
+
+    # ========== Attraction Search Section ==========
+    st.subheader("Attraction Search")
+    attraction_input = st.text_input("Enter attraction", key="attraction_query")
+
+    if st.button("Search Attraction"):
+        st.session_state.attraction_page = 1
+        combined_query = f"{st.session_state.city_query} {st.session_state.attraction_query}".strip()
+        data = fetch_images(combined_query, page=1, per_page=5)
+        st.session_state.attraction_images = data.get("results", [])
+        st.session_state.attraction_total = data.get("total", 0)
+        st.session_state.selected_attraction_image = None
+        st.rerun()
+
+    attraction_col, highlight_col = st.columns([3, 2], gap="large")
+
+    with attraction_col:
+        if st.session_state.attraction_query and st.session_state.attraction_images:
+            with st.expander("Attraction Results", expanded=True):
+                st.write(
+                    f"Showing **{st.session_state.city_query} {st.session_state.attraction_query}**, "
+                    f"page {st.session_state.attraction_page}"
+                )
+
+                images = st.session_state.attraction_images
+                img_cols = st.columns(len(images))
+                for i, img_data in enumerate(images):
+                    with img_cols[i]:
+                        thumb_url = img_data["urls"]["thumb"]
+                        st.image(thumb_url, use_container_width=True)
+                        if st.button("Select", key=f"select_attr_page{st.session_state.attraction_page}_{i}"):
+                            st.session_state.selected_attraction_image = img_data["urls"]["regular"]
+                            st.rerun()
+
+                # ---------- Pagination Arrows for attractions (aligned left and closer together) ----------
+                pages = (st.session_state.attraction_total // 5) + 1
+                col_btn1, col_btn2, col_spacer = st.columns([1, 1, 8])
+                with col_btn1:
+                    if st.button("◀", key="attr_prev") and st.session_state.attraction_page > 1:
+                        st.session_state.attraction_page -= 1
+                        combined_query = f"{st.session_state.city_query} {st.session_state.attraction_query}".strip()
+                        data = fetch_images(combined_query,
+                                            page=st.session_state.attraction_page,
+                                            per_page=5)
+                        st.session_state.attraction_images = data.get("results", [])
+                        st.session_state.attraction_total = data.get("total", 0)
+                        st.rerun()
+                with col_btn2:
+                    if st.button("▶", key="attr_next") and st.session_state.attraction_page < pages:
+                        st.session_state.attraction_page += 1
+                        combined_query = f"{st.session_state.city_query} {st.session_state.attraction_query}".strip()
+                        data = fetch_images(combined_query,
+                                            page=st.session_state.attraction_page,
+                                            per_page=5)
+                        st.session_state.attraction_images = data.get("results", [])
+                        st.session_state.attraction_total = data.get("total", 0)
+                        st.rerun()
+
+    with highlight_col:
+        st.write("**Highlight**")
+        if st.session_state.selected_attraction_image:
+            st.image(st.session_state.selected_attraction_image, use_container_width=True)
+
 
 if __name__ == "__main__":
     main()
