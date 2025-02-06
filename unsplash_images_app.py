@@ -27,7 +27,7 @@ def fetch_images(query, page=1, per_page=5):
 
 def main():
     st.set_page_config(layout="wide")
-    st.title("KPN Image Explorer")
+    st.title("KLM Image Explorer")
 
     # --- Custom CSS to style expanders and buttons ---
     st.markdown(
