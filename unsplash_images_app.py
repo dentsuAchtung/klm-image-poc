@@ -159,7 +159,7 @@ def main():
         st.session_state.city_total = data.get("result_count", 0)
         st.session_state.selected_city_image = ""
         st.session_state.selected_city_photographer = ""
-        st.experimental_rerun()
+        st.rerun()
 
     city_col, destination_col = st.columns([3, 2], gap="large")
 
