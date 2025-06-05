@@ -159,7 +159,7 @@ def main():
         st.session_state.city_total = data.get("result_count", 0)
         st.session_state.selected_city_image = ""
         st.session_state.selected_city_photographer = ""
-        st.rerun()
+        st.experimental_rerun()
 
     city_col, destination_col = st.columns([3, 2], gap="large")
 
@@ -197,7 +197,7 @@ def main():
                             
                             st.session_state.selected_city_image = comp_url or thumb_url
                             st.session_state.selected_city_photographer = img_data.get("title", "Getty Images")
-                            st.rerun()
+                            st.experimental_rerun()
 
                 # ---------- Pagination Arrows (aligned left and closer together) ----------
                 if st.session_state.city_total > 0:
@@ -211,7 +211,7 @@ def main():
                                                 per_page=5)
                             st.session_state.city_images = data.get("images", [])
                             st.session_state.city_total = data.get("result_count", 0)
-                            st.rerun()
+                            st.experimental_rerun()
                     with col_btn2:
                         if st.button("▶", key="city_next") and st.session_state.city_page < pages:
                             st.session_state.city_page += 1
@@ -220,7 +220,7 @@ def main():
                                                 per_page=5)
                             st.session_state.city_images = data.get("images", [])
                             st.session_state.city_total = data.get("result_count", 0)
-                            st.rerun()
+                            st.experimental_rerun()
 
     with destination_col:
         st.write("**Destination (Full Size)**")
@@ -242,7 +242,7 @@ def main():
         st.session_state.attraction_total = data.get("result_count", 0)
         st.session_state.selected_attraction_image = ""
         st.session_state.selected_attraction_photographer = ""
-        st.rerun()
+        st.experimental_rerun()
 
     attraction_col, highlight_col = st.columns([3, 2], gap="large")
 
@@ -281,7 +281,7 @@ def main():
                             
                             st.session_state.selected_attraction_image = comp_url or thumb_url
                             st.session_state.selected_attraction_photographer = img_data.get("title", "Getty Images")
-                            st.rerun()
+                            st.experimental_rerun()
 
                 # ---------- Pagination Arrows for attractions (aligned left and closer together) ----------
                 if st.session_state.attraction_total > 0:
@@ -296,7 +296,7 @@ def main():
                                                 per_page=5)
                             st.session_state.attraction_images = data.get("images", [])
                             st.session_state.attraction_total = data.get("result_count", 0)
-                            st.rerun()
+                            st.experimental_rerun()
                     with col_btn2:
                         if st.button("▶", key="attr_next") and st.session_state.attraction_page < pages:
                             st.session_state.attraction_page += 1
@@ -306,7 +306,7 @@ def main():
                                                 per_page=5)
                             st.session_state.attraction_images = data.get("images", [])
                             st.session_state.attraction_total = data.get("result_count", 0)
-                            st.rerun()
+                            st.experimental_rerun()
 
     with highlight_col:
         st.write("**Highlight (Full Size)**")
