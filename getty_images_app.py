@@ -182,7 +182,7 @@ def main():
                                     break
                         
                         if thumb_url:
-                            st.image(thumb_url, use_container_width=True)
+                            st.image(thumb_url)
                         else:
                             st.write("No thumbnail available")
                         
@@ -267,7 +267,7 @@ def main():
                                     break
                         
                         if thumb_url:
-                            st.image(thumb_url, use_container_width=True)
+                            st.image(thumb_url)
                         else:
                             st.write("No thumbnail available")
                         
