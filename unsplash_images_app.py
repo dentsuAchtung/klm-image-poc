@@ -55,44 +55,69 @@ def get_access_token():
         st.error(f"Error getting access token: {str(e)}")
         return None
 
-def fetch_images(query, page=1, per_page=5):
+def fetch_images(query, page=1, per_page=20):
     """Fetch a page of results from the Getty Images API."""
-    
-    # Get access token
     token = get_access_token()
     if not token:
         return {}
-    
     url = "https://api.gettyimages.com/v3/search/images/creative"
-    
     headers = {
         "Api-Key": api_key,
         "Authorization": f"Bearer {token}",
         "Accept": "application/json"
     }
-    
     params = {
         "phrase": query,
         "page": page,
         "page_size": per_page,
-        "fields": "id,title,thumb,preview,comp,display_sizes"  # Request display sizes
+        "fields": "id,title,thumb,preview,comp,display_sizes,max_dimensions"
     }
-    
-    try:
-        response = requests.get(url, headers=headers, params=params)
-        if response.status_code == 200:
-            return response.json()
-        else:
-            st.error(f"Getty Images API error {response.status_code}: {response.text}")
-            return {}
-    except Exception as e:
-        st.error(f"Error fetching images: {str(e)}")
+    response = requests.get(url, headers=headers, params=params)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        st.error(f"Getty Images API error {response.status_code}: {response.text}")
         return {}
 
+def fetch_many_images(query, max_pages=5, per_page=100):
+    all_images = []
+    for page in range(1, max_pages + 1):
+        data = fetch_images(query, page=page, per_page=per_page)
+        images = data.get("images", [])
+        if not images:
+            break
+        all_images.extend(images)
+        if len(images) < per_page:
+            break  # No more pages
+    return all_images
+
+def filter_portrait(images):
+    return [img for img in images if img.get('max_dimensions', {}).get('height', 0) > img.get('max_dimensions', {}).get('width', 0)]
+
+def filter_landscape(images):
+    return [img for img in images if img.get('max_dimensions', {}).get('width', 0) > img.get('max_dimensions', {}).get('height', 0)]
+
+def get_largest_image_url(img_data):
+    if "display_sizes" in img_data:
+        # Prefer 'comp', then 'preview', then 'thumb'
+        preferred_order = ["comp", "preview", "thumb"]
+        for name in preferred_order:
+            for size in img_data["display_sizes"]:
+                if size.get("name") == name:
+                    return size["uri"]
+        # Fallback: largest by area
+        sizes = sorted(
+            img_data["display_sizes"],
+            key=lambda s: s.get("width", 0) * s.get("height", 0),
+            reverse=True
+        )
+        if sizes:
+            return sizes[0]["uri"]
+    return None
 
 def main():
     st.set_page_config(layout="wide")
-    st.title("KLM Image Explorer - Getty Images")
+    st.title("Things to see | Image Selection ")
 
     # --- Custom CSS to style expanders and buttons ---
     st.markdown(
@@ -133,6 +158,8 @@ def main():
         st.session_state.selected_city_image = ""
     if "selected_city_photographer" not in st.session_state:
         st.session_state.selected_city_photographer = ""
+    if "selected_city_image_data" not in st.session_state:
+        st.session_state.selected_city_image_data = None
 
     # Attraction-related state
     if "attraction_query" not in st.session_state:
@@ -147,19 +174,48 @@ def main():
         st.session_state.selected_attraction_image = ""
     if "selected_attraction_photographer" not in st.session_state:
         st.session_state.selected_attraction_photographer = ""
+    if "selected_attraction_image_data" not in st.session_state:
+        st.session_state.selected_attraction_image_data = None
+
+    # Attraction2-related state
+    if "attraction2_query" not in st.session_state:
+        st.session_state.attraction2_query = ""
+    if "attraction2_page" not in st.session_state:
+        st.session_state.attraction2_page = 1
+    if "attraction2_total" not in st.session_state:
+        st.session_state.attraction2_total = 0
+    if "attraction2_images" not in st.session_state:
+        st.session_state.attraction2_images = []
+    if "selected_attraction2_image" not in st.session_state:
+        st.session_state.selected_attraction2_image = ""
+    if "selected_attraction2_photographer" not in st.session_state:
+        st.session_state.selected_attraction2_photographer = ""
+    if "selected_attraction2_image_data" not in st.session_state:
+        st.session_state.selected_attraction2_image_data = None
 
     # ========== City Search Section ==========
-    st.subheader("City Search")
-    city_input = st.text_input("Enter city", key="city_query")
+    st.subheader("Search Destination City")
+    city_input = st.text_input("Enter city", key="city_input_value")
+    if "city_input_prev" not in st.session_state:
+        st.session_state.city_input_prev = ""
 
+    city_search_triggered = False
     if st.button("Search City"):
+        city_search_triggered = True
+    elif st.session_state.city_input_value != st.session_state.city_input_prev and st.session_state.city_input_value.strip():
+        city_search_triggered = True
+    if city_search_triggered:
+        st.session_state.city_query = st.session_state.city_input_value
+        st.session_state.city_input_prev = st.session_state.city_input_value
         st.session_state.city_page = 1
-        data = fetch_images(st.session_state.city_query, page=1, per_page=5)
-        st.session_state.city_images = data.get("images", [])
-        st.session_state.city_total = data.get("result_count", 0)
+        all_images = fetch_many_images(st.session_state.city_query, max_pages=5, per_page=100)
+        filtered = filter_portrait(all_images)
+        st.session_state.city_images = filtered
+        st.session_state.city_total = len(filtered)
         st.session_state.selected_city_image = ""
         st.session_state.selected_city_photographer = ""
-        st.rerun()
+        st.session_state.selected_city_image_data = None
+        st.session_state.city_debug = all_images  # Store debug info
 
     city_col, destination_col = st.columns([3, 2], gap="large")
 
@@ -167,82 +223,80 @@ def main():
         if st.session_state.city_query and st.session_state.city_images:
             with st.expander("City Results", expanded=True):
                 st.write(f"Showing **{st.session_state.city_query}**, page {st.session_state.city_page}")
-
-                # ---------- Display the current page's row of images ----------
                 images = st.session_state.city_images
-                img_cols = st.columns(len(images))
-                for i, img_data in enumerate(images):
+                page = st.session_state.city_page
+                per_page = 5
+                start = (page - 1) * per_page
+                end = start + per_page
+                page_images = images[start:end]
+                img_cols = st.columns(len(page_images))
+                for i, img_data in enumerate(page_images):
                     with img_cols[i]:
-                        # Getty Images API structure
                         thumb_url = None
                         if "display_sizes" in img_data:
                             for size in img_data["display_sizes"]:
                                 if size["name"] == "thumb":
                                     thumb_url = size["uri"]
                                     break
-                        
                         if thumb_url:
                             st.image(thumb_url)
                         else:
                             st.write("No thumbnail available")
-                        
-                        # When an image is selected, store both the full version and title
-                        if st.button("Select", key=f"select_city_page{st.session_state.city_page}_{i}"):
+                        if st.button("Select", key=f"select_city_page{page}_{i}"):
                             comp_url = None
                             if "display_sizes" in img_data:
                                 for size in img_data["display_sizes"]:
                                     if size["name"] == "comp":
                                         comp_url = size["uri"]
                                         break
-                            
                             st.session_state.selected_city_image = comp_url or thumb_url
                             st.session_state.selected_city_photographer = img_data.get("title", "Getty Images")
-                            st.rerun()
-
-                # ---------- Pagination Arrows (aligned left and closer together) ----------
-                if st.session_state.city_total > 0:
-                    pages = (st.session_state.city_total // 5) + (1 if st.session_state.city_total % 5 > 0 else 0)
-                    col_btn1, col_btn2, col_spacer = st.columns([1, 1, 8])
-                    with col_btn1:
-                        if st.button("◀", key="city_prev") and st.session_state.city_page > 1:
-                            st.session_state.city_page -= 1
-                            data = fetch_images(st.session_state.city_query,
-                                                page=st.session_state.city_page,
-                                                per_page=5)
-                            st.session_state.city_images = data.get("images", [])
-                            st.session_state.city_total = data.get("result_count", 0)
-                            st.rerun()
-                    with col_btn2:
-                        if st.button("▶", key="city_next") and st.session_state.city_page < pages:
-                            st.session_state.city_page += 1
-                            data = fetch_images(st.session_state.city_query,
-                                                page=st.session_state.city_page,
-                                                per_page=5)
-                            st.session_state.city_images = data.get("images", [])
-                            st.session_state.city_total = data.get("result_count", 0)
-                            st.rerun()
+                            st.session_state.selected_city_image_data = img_data
+                # Pagination Arrows
+                pages = (len(images) // per_page) + (1 if len(images) % per_page > 0 else 0)
+                col_btn1, col_btn2, col_spacer = st.columns([1, 1, 8])
+                with col_btn1:
+                    if st.button("◀", key="city_prev") and page > 1:
+                        st.session_state.city_page -= 1
+                        st.rerun()
+                with col_btn2:
+                    if st.button("▶", key="city_next") and page < pages:
+                        st.session_state.city_page += 1
+                        st.rerun()
 
     with destination_col:
         st.write("**Destination (Full Size)**")
-        if st.session_state.selected_city_image:
-            # Display the full-size image with a larger width.
-            st.image(st.session_state.selected_city_image, width=800)
+        if st.session_state.selected_city_image_data:
+            full_url = get_largest_image_url(st.session_state.selected_city_image_data)
+            if full_url:
+                st.image(full_url, width=800)
             st.write("Image:", st.session_state.selected_city_photographer)
             st.write("Source: Getty Images")
 
     # ========== Attraction Search Section ==========
-    st.subheader("Attraction Search")
-    attraction_input = st.text_input("Enter attraction", key="attraction_query")
+    st.subheader("Search Highlight Attraction")
+    attraction_input = st.text_input("Enter attraction", key="attraction_input_value")
+    if "attraction_input_prev" not in st.session_state:
+        st.session_state.attraction_input_prev = ""
 
+    attraction_search_triggered = False
     if st.button("Search Attraction"):
+        attraction_search_triggered = True
+    elif st.session_state.attraction_input_value != st.session_state.attraction_input_prev and st.session_state.attraction_input_value.strip():
+        attraction_search_triggered = True
+    if attraction_search_triggered:
+        st.session_state.attraction_query = st.session_state.attraction_input_value
+        st.session_state.attraction_input_prev = st.session_state.attraction_input_value
         st.session_state.attraction_page = 1
         combined_query = f"{st.session_state.city_query} {st.session_state.attraction_query}".strip()
-        data = fetch_images(combined_query, page=1, per_page=5)
-        st.session_state.attraction_images = data.get("images", [])
-        st.session_state.attraction_total = data.get("result_count", 0)
+        all_images = fetch_many_images(combined_query, max_pages=5, per_page=100)
+        filtered = filter_landscape(all_images)
+        st.session_state.attraction_images = filtered
+        st.session_state.attraction_total = len(filtered)
         st.session_state.selected_attraction_image = ""
         st.session_state.selected_attraction_photographer = ""
-        st.rerun()
+        st.session_state.selected_attraction_image_data = None
+        st.session_state.attraction_debug = all_images  # Store debug info
 
     attraction_col, highlight_col = st.columns([3, 2], gap="large")
 
@@ -253,66 +307,138 @@ def main():
                     f"Showing **{st.session_state.city_query} {st.session_state.attraction_query}**, "
                     f"page {st.session_state.attraction_page}"
                 )
-
                 images = st.session_state.attraction_images
-                img_cols = st.columns(len(images))
-                for i, img_data in enumerate(images):
+                page = st.session_state.attraction_page
+                per_page = 5
+                start = (page - 1) * per_page
+                end = start + per_page
+                page_images = images[start:end]
+                img_cols = st.columns(len(page_images))
+                for i, img_data in enumerate(page_images):
                     with img_cols[i]:
-                        # Getty Images API structure
                         thumb_url = None
                         if "display_sizes" in img_data:
                             for size in img_data["display_sizes"]:
                                 if size["name"] == "thumb":
                                     thumb_url = size["uri"]
                                     break
-                        
                         if thumb_url:
                             st.image(thumb_url)
                         else:
                             st.write("No thumbnail available")
-                        
-                        if st.button("Select", key=f"select_attr_page{st.session_state.attraction_page}_{i}"):
+                        if st.button("Select", key=f"select_attr_page{page}_{i}"):
                             comp_url = None
                             if "display_sizes" in img_data:
                                 for size in img_data["display_sizes"]:
                                     if size["name"] == "comp":
                                         comp_url = size["uri"]
                                         break
-                            
                             st.session_state.selected_attraction_image = comp_url or thumb_url
                             st.session_state.selected_attraction_photographer = img_data.get("title", "Getty Images")
-                            st.rerun()
-
-                # ---------- Pagination Arrows for attractions (aligned left and closer together) ----------
-                if st.session_state.attraction_total > 0:
-                    pages = (st.session_state.attraction_total // 5) + (1 if st.session_state.attraction_total % 5 > 0 else 0)
-                    col_btn1, col_btn2, col_spacer = st.columns([1, 1, 8])
-                    with col_btn1:
-                        if st.button("◀", key="attr_prev") and st.session_state.attraction_page > 1:
-                            st.session_state.attraction_page -= 1
-                            combined_query = f"{st.session_state.city_query} {st.session_state.attraction_query}".strip()
-                            data = fetch_images(combined_query,
-                                                page=st.session_state.attraction_page,
-                                                per_page=5)
-                            st.session_state.attraction_images = data.get("images", [])
-                            st.session_state.attraction_total = data.get("result_count", 0)
-                            st.rerun()
-                    with col_btn2:
-                        if st.button("▶", key="attr_next") and st.session_state.attraction_page < pages:
-                            st.session_state.attraction_page += 1
-                            combined_query = f"{st.session_state.city_query} {st.session_state.attraction_query}".strip()
-                            data = fetch_images(combined_query,
-                                                page=st.session_state.attraction_page,
-                                                per_page=5)
-                            st.session_state.attraction_images = data.get("images", [])
-                            st.session_state.attraction_total = data.get("result_count", 0)
-                            st.rerun()
+                            st.session_state.selected_attraction_image_data = img_data
+                # Pagination Arrows
+                pages = (len(images) // per_page) + (1 if len(images) % per_page > 0 else 0)
+                col_btn1, col_btn2, col_spacer = st.columns([1, 1, 8])
+                with col_btn1:
+                    if st.button("◀", key="attr_prev") and page > 1:
+                        st.session_state.attraction_page -= 1
+                        st.rerun()
+                with col_btn2:
+                    if st.button("▶", key="attr_next") and page < pages:
+                        st.session_state.attraction_page += 1
+                        st.rerun()
 
     with highlight_col:
         st.write("**Highlight (Full Size)**")
-        if st.session_state.selected_attraction_image:
-            st.image(st.session_state.selected_attraction_image, width=800)
+        if st.session_state.selected_attraction_image_data:
+            full_url = get_largest_image_url(st.session_state.selected_attraction_image_data)
+            if full_url:
+                st.image(full_url, width=800)
             st.write("Image:", st.session_state.selected_attraction_photographer)
+            st.write("Source: Getty Images")
+
+    # ========== Second Attraction Search Section ==========
+    st.subheader("Search Second Highlight Attraction")
+    attraction2_input = st.text_input("Enter attraction", key="attraction2_input_value")
+    if "attraction2_input_prev" not in st.session_state:
+        st.session_state.attraction2_input_prev = ""
+
+    attraction2_search_triggered = False
+    if st.button("Search Attraction", key="search_attraction2"):
+        attraction2_search_triggered = True
+    elif st.session_state.attraction2_input_value != st.session_state.attraction2_input_prev and st.session_state.attraction2_input_value.strip():
+        attraction2_search_triggered = True
+    if attraction2_search_triggered:
+        st.session_state.attraction2_query = st.session_state.attraction2_input_value
+        st.session_state.attraction2_input_prev = st.session_state.attraction2_input_value
+        st.session_state.attraction2_page = 1
+        combined_query2 = f"{st.session_state.city_query} {st.session_state.attraction2_query}".strip()
+        all_images2 = fetch_many_images(combined_query2, max_pages=5, per_page=100)
+        filtered2 = filter_landscape(all_images2)
+        st.session_state.attraction2_images = filtered2
+        st.session_state.attraction2_total = len(filtered2)
+        st.session_state.selected_attraction2_image = ""
+        st.session_state.selected_attraction2_photographer = ""
+        st.session_state.selected_attraction2_image_data = None
+        st.session_state.attraction2_debug = all_images2  # Store debug info
+
+    attraction2_col, highlight2_col = st.columns([3, 2], gap="large")
+
+    with attraction2_col:
+        if st.session_state.attraction2_query and st.session_state.attraction2_images:
+            with st.expander("Attraction 2 Results", expanded=True):
+                st.write(
+                    f"Showing **{st.session_state.city_query} {st.session_state.attraction2_query}**, "
+                    f"page {st.session_state.attraction2_page}"
+                )
+                images2 = st.session_state.attraction2_images
+                page2 = st.session_state.attraction2_page
+                per_page2 = 5
+                start2 = (page2 - 1) * per_page2
+                end2 = start2 + per_page2
+                page_images2 = images2[start2:end2]
+                img_cols2 = st.columns(len(page_images2))
+                for i, img_data in enumerate(page_images2):
+                    with img_cols2[i]:
+                        thumb_url = None
+                        if "display_sizes" in img_data:
+                            for size in img_data["display_sizes"]:
+                                if size["name"] == "thumb":
+                                    thumb_url = size["uri"]
+                                    break
+                        if thumb_url:
+                            st.image(thumb_url)
+                        else:
+                            st.write("No thumbnail available")
+                        if st.button("Select", key=f"select_attr2_page{page2}_{i}"):
+                            comp_url = None
+                            if "display_sizes" in img_data:
+                                for size in img_data["display_sizes"]:
+                                    if size["name"] == "comp":
+                                        comp_url = size["uri"]
+                                        break
+                            st.session_state.selected_attraction2_image = comp_url or thumb_url
+                            st.session_state.selected_attraction2_photographer = img_data.get("title", "Getty Images")
+                            st.session_state.selected_attraction2_image_data = img_data
+                # Pagination for second attraction
+                pages2 = (len(images2) // per_page2) + (1 if len(images2) % per_page2 > 0 else 0)
+                col_btn1, col_btn2, col_spacer = st.columns([1, 1, 8])
+                with col_btn1:
+                    if st.button("◀", key="attr2_prev") and page2 > 1:
+                        st.session_state.attraction2_page -= 1
+                        st.rerun()
+                with col_btn2:
+                    if st.button("▶", key="attr2_next") and page2 < pages2:
+                        st.session_state.attraction2_page += 1
+                        st.rerun()
+
+    with highlight2_col:
+        st.write("**Highlight 2 (Full Size)**")
+        if st.session_state.selected_attraction2_image_data:
+            full_url = get_largest_image_url(st.session_state.selected_attraction2_image_data)
+            if full_url:
+                st.image(full_url, width=800)
+            st.write("Image:", st.session_state.selected_attraction2_photographer)
             st.write("Source: Getty Images")
 
 
