@@ -3,10 +3,16 @@ import requests
 from dotenv import load_dotenv
 import os
 import base64
+import urllib.parse
+
+
+
 
 load_dotenv()
-api_key = os.getenv("GETTY_API_KEY", "26rguqfz64pf5vhp5pgzk6mr")  # Default to your provided key
-client_secret = os.getenv("GETTY_CLIENT_SECRET", "PYzgvn4v4hz4go4Mvzaf")  # Default to your provided secret
+api_key = os.getenv("GETTY_API_KEY")  
+client_secret = os.getenv("GETTY_CLIENT_SECRET")  
+unsplash_access_key = os.getenv("UNSPLASH_ACCESS_KEY")
+unsplash_secret_key = os.getenv("UNSPLASH_SECRET_KEY")
 
 # Global variable to store access token
 access_token = None
@@ -55,12 +61,16 @@ def get_access_token():
         st.error(f"Error getting access token: {str(e)}")
         return None
 
-def fetch_images(query, page=1, per_page=20):
-    """Fetch a page of results from the Getty Images API."""
+# Fetch images from Getty and Unsplash together
+def fetch_images(query, page=1, per_page=100, orientation='landscape'):
+    """Fetch images from Getty and Unsplash for a query."""
+    # Fetch Getty images
     token = get_access_token()
     if not token:
-        return {}
-    url = "https://api.gettyimages.com/v3/search/images/creative"
+        return []
+
+    # Getty API request
+    getty_url = "https://api.gettyimages.com/v3/search/images/creative"
     headers = {
         "Api-Key": api_key,
         "Authorization": f"Bearer {token}",
@@ -72,18 +82,55 @@ def fetch_images(query, page=1, per_page=20):
         "page_size": per_page,
         "fields": "id,title,thumb,preview,comp,display_sizes,max_dimensions"
     }
-    response = requests.get(url, headers=headers, params=params)
-    if response.status_code == 200:
-        return response.json()
-    else:
-        st.error(f"Getty Images API error {response.status_code}: {response.text}")
-        return {}
 
-def fetch_many_images(query, max_pages=5, per_page=100):
+    getty_response = requests.get(getty_url, headers=headers, params=params)
+    getty_images = []
+    if getty_response.status_code == 200:
+        getty_images = getty_response.json().get("images", [])
+    else:
+        st.error(f"Getty Images API error {getty_response.status_code}: {getty_response.text}")
+
+    # Fetch Unsplash images
+    unsplash_url = "https://api.unsplash.com/search/photos"
+    unsplash_headers = {
+        "Authorization": f"Client-ID {unsplash_access_key}"
+    }
+
+    encoded_query = urllib.parse.quote_plus(query)
+
+    if orientation == 'portrait':
+        unsplash_params = {
+            "query": encoded_query,
+            "page": page,  # Include page number for pagination
+            "per_page": per_page,  # Number of images per page
+            # Do not pass 'orientation' to Unsplash for city search, we'll filter later
+        }
+    else:
+        # For the attraction section, only fetch landscape
+        unsplash_params = {
+            "query": encoded_query,
+            "page": page,
+            "per_page": per_page,
+            "orientation": orientation  # Apply landscape filter for attractions
+        }
+
+    unsplash_response = requests.get(unsplash_url, headers=unsplash_headers, params=unsplash_params)
+    unsplash_images = []
+    if unsplash_response.status_code == 200:
+        unsplash_images = unsplash_response.json().get("results", [])
+    else:
+        st.error(f"Unsplash API error {unsplash_response.status_code}: {unsplash_response.text}")
+
+    # Combine Getty and Unsplash images
+    combined_images = getty_images + unsplash_images
+    return combined_images
+
+# Fetch multiple pages of images (adjusted)
+def fetch_many_images(query, max_pages=5, per_page=100, orientation='landscape'):
+    """Fetch multiple pages of results from Getty and Unsplash for a query."""
     all_images = []
     for page in range(1, max_pages + 1):
-        data = fetch_images(query, page=page, per_page=per_page)
-        images = data.get("images", [])
+        images = fetch_images(query, page=page, per_page=per_page, orientation=orientation)
         if not images:
             break
         all_images.extend(images)
@@ -91,13 +138,25 @@ def fetch_many_images(query, max_pages=5, per_page=100):
             break  # No more pages
     return all_images
 
-def filter_portrait(images):
-    return [img for img in images if img.get('max_dimensions', {}).get('height', 0) > img.get('max_dimensions', {}).get('width', 0)]
+# Function to get the thumbnail URL (for Getty and Unsplash)
+def get_thumbnail_url(img_data):
+    """Get the thumbnail URL for Getty and Unsplash images."""
+    thumb_url = None
+    # For Getty images
+    if 'display_sizes' in img_data:
+        for size in img_data["display_sizes"]:
+            if size["name"] == "thumb":
+                thumb_url = size["uri"]
+                break
+    # For Unsplash images
+    elif 'urls' in img_data:
+        thumb_url = img_data["urls"].get("thumb")
+    
+    return thumb_url
 
-def filter_landscape(images):
-    return [img for img in images if img.get('max_dimensions', {}).get('width', 0) > img.get('max_dimensions', {}).get('height', 0)]
-
+# Function to get the largest image URL (for Getty and Unsplash)
 def get_largest_image_url(img_data):
+    """Get the largest image URL for Getty and Unsplash images."""
     if "display_sizes" in img_data:
         # Prefer 'comp', then 'preview', then 'thumb'
         preferred_order = ["comp", "preview", "thumb"]
@@ -113,7 +172,65 @@ def get_largest_image_url(img_data):
         )
         if sizes:
             return sizes[0]["uri"]
+    # For Unsplash images
+    elif "urls" in img_data:
+        return img_data["urls"].get("full")
+    
     return None
+
+# Function to get the photographer/source (for Getty and Unsplash)
+def get_image_source(img_data):
+    """Get the source/photographer for Getty and Unsplash images."""
+    if 'title' in img_data:  # Getty Images
+        return "Getty"
+    elif 'user' in img_data:  # Unsplash Images
+        photographer_name = img_data['user']['name']
+        photographer_profile = img_data['user']['links']['html']
+        return f"Photo by [@{photographer_name}]({photographer_profile}) on Unsplash"
+    return "Unknown Source"
+
+def filter_portrait(images, orientation='portrait'):
+    """Filter portrait images from Getty and Unsplash."""
+    portrait_images = []
+    for img in images:
+        # For Getty images
+        if 'max_dimensions' in img:
+            height = img['max_dimensions'].get('height', 0)
+            width = img['max_dimensions'].get('width', 0)
+        # For Unsplash images
+        else:
+            height = img.get('height', 0)
+            width = img.get('width', 0)
+        
+        # If the height is greater than the width, it's portrait
+        if height > width:
+            portrait_images.append(img)
+    
+    return portrait_images
+
+def filter_landscape(images, orientation='landscape'):
+    """Filter landscape images from Getty and Unsplash."""
+    landscape_images = []
+    for img in images:
+        # For Getty images (check 'max_dimensions' for width and height)
+        if 'max_dimensions' in img:
+            height = img['max_dimensions'].get('height', 0)
+            width = img['max_dimensions'].get('width', 0)
+        # For Unsplash images (directly check 'height' and 'width' in the image object)
+        elif 'height' in img and 'width' in img:
+            height = img['height']
+            width = img['width']
+        else:
+            # If neither Getty nor Unsplash image structure, skip
+            continue
+        
+        # If width > height, it's considered landscape
+        if width > height:
+            landscape_images.append(img)
+    
+    return landscape_images
+
+
 
 def main():
     st.set_page_config(layout="wide")
@@ -208,7 +325,7 @@ def main():
         st.session_state.city_query = st.session_state.city_input_value
         st.session_state.city_input_prev = st.session_state.city_input_value
         st.session_state.city_page = 1
-        all_images = fetch_many_images(st.session_state.city_query, max_pages=5, per_page=100)
+        all_images = fetch_many_images(st.session_state.city_query, max_pages=5, per_page=100, orientation='portrait')
         filtered = filter_portrait(all_images)
         st.session_state.city_images = filtered
         st.session_state.city_total = len(filtered)
@@ -232,27 +349,18 @@ def main():
                 img_cols = st.columns(len(page_images))
                 for i, img_data in enumerate(page_images):
                     with img_cols[i]:
-                        thumb_url = None
-                        if "display_sizes" in img_data:
-                            for size in img_data["display_sizes"]:
-                                if size["name"] == "thumb":
-                                    thumb_url = size["uri"]
-                                    break
+                        thumb_url = get_thumbnail_url(img_data)
                         if thumb_url:
                             st.image(thumb_url)
                         else:
                             st.write("No thumbnail available")
                         if st.button("Select", key=f"select_city_page{page}_{i}"):
-                            comp_url = None
-                            if "display_sizes" in img_data:
-                                for size in img_data["display_sizes"]:
-                                    if size["name"] == "comp":
-                                        comp_url = size["uri"]
-                                        break
+                            comp_url = get_largest_image_url(img_data)
                             st.session_state.selected_city_image = comp_url or thumb_url
-                            st.session_state.selected_city_photographer = img_data.get("title", "Getty Images")
+                            st.session_state.selected_city_photographer = get_image_source(img_data)
                             st.session_state.selected_city_image_data = img_data
-                # Pagination Arrows
+
+                # Pagination arrows for city section
                 pages = (len(images) // per_page) + (1 if len(images) % per_page > 0 else 0)
                 col_btn1, col_btn2, col_spacer = st.columns([1, 1, 8])
                 with col_btn1:
@@ -271,9 +379,9 @@ def main():
             if full_url:
                 st.image(full_url, width=800)
             st.write("Image:", st.session_state.selected_city_photographer)
-            st.write("Source: Getty Images")
+            st.write("Source:", st.session_state.selected_city_photographer)
 
-    # ========== Attraction Search Section ==========
+    # ========== First Attraction Search Section ==========
     st.subheader("Search Highlight Attraction")
     attraction_input = st.text_input("Enter attraction", key="attraction_input_value")
     if "attraction_input_prev" not in st.session_state:
@@ -284,12 +392,20 @@ def main():
         attraction_search_triggered = True
     elif st.session_state.attraction_input_value != st.session_state.attraction_input_prev and st.session_state.attraction_input_value.strip():
         attraction_search_triggered = True
+    
     if attraction_search_triggered:
         st.session_state.attraction_query = st.session_state.attraction_input_value
         st.session_state.attraction_input_prev = st.session_state.attraction_input_value
         st.session_state.attraction_page = 1
+
+        # Combine city and attraction query
         combined_query = f"{st.session_state.city_query} {st.session_state.attraction_query}".strip()
-        all_images = fetch_many_images(combined_query, max_pages=5, per_page=100)
+
+        # Encode the combined query
+        encoded_query = urllib.parse.quote_plus(combined_query)
+
+        # Fetch images from Getty and Unsplash with the encoded query
+        all_images = fetch_many_images(encoded_query, max_pages=5, per_page=100, orientation='landscape')
         filtered = filter_landscape(all_images)
         st.session_state.attraction_images = filtered
         st.session_state.attraction_total = len(filtered)
@@ -297,6 +413,9 @@ def main():
         st.session_state.selected_attraction_photographer = ""
         st.session_state.selected_attraction_image_data = None
         st.session_state.attraction_debug = all_images  # Store debug info
+
+    
+
 
     attraction_col, highlight_col = st.columns([3, 2], gap="large")
 
@@ -316,27 +435,18 @@ def main():
                 img_cols = st.columns(len(page_images))
                 for i, img_data in enumerate(page_images):
                     with img_cols[i]:
-                        thumb_url = None
-                        if "display_sizes" in img_data:
-                            for size in img_data["display_sizes"]:
-                                if size["name"] == "thumb":
-                                    thumb_url = size["uri"]
-                                    break
+                        thumb_url = get_thumbnail_url(img_data)
                         if thumb_url:
                             st.image(thumb_url)
                         else:
                             st.write("No thumbnail available")
                         if st.button("Select", key=f"select_attr_page{page}_{i}"):
-                            comp_url = None
-                            if "display_sizes" in img_data:
-                                for size in img_data["display_sizes"]:
-                                    if size["name"] == "comp":
-                                        comp_url = size["uri"]
-                                        break
+                            comp_url = get_largest_image_url(img_data)
                             st.session_state.selected_attraction_image = comp_url or thumb_url
-                            st.session_state.selected_attraction_photographer = img_data.get("title", "Getty Images")
+                            st.session_state.selected_attraction_photographer = get_image_source(img_data)
                             st.session_state.selected_attraction_image_data = img_data
-                # Pagination Arrows
+
+                # Pagination arrows for first attraction section
                 pages = (len(images) // per_page) + (1 if len(images) % per_page > 0 else 0)
                 col_btn1, col_btn2, col_spacer = st.columns([1, 1, 8])
                 with col_btn1:
@@ -355,7 +465,7 @@ def main():
             if full_url:
                 st.image(full_url, width=800)
             st.write("Image:", st.session_state.selected_attraction_photographer)
-            st.write("Source: Getty Images")
+            st.write("Source:", st.session_state.selected_attraction_photographer)
 
     # ========== Second Attraction Search Section ==========
     st.subheader("Search Second Highlight Attraction")
@@ -368,12 +478,13 @@ def main():
         attraction2_search_triggered = True
     elif st.session_state.attraction2_input_value != st.session_state.attraction2_input_prev and st.session_state.attraction2_input_value.strip():
         attraction2_search_triggered = True
+    
     if attraction2_search_triggered:
         st.session_state.attraction2_query = st.session_state.attraction2_input_value
         st.session_state.attraction2_input_prev = st.session_state.attraction2_input_value
         st.session_state.attraction2_page = 1
         combined_query2 = f"{st.session_state.city_query} {st.session_state.attraction2_query}".strip()
-        all_images2 = fetch_many_images(combined_query2, max_pages=5, per_page=100)
+        all_images2 = fetch_many_images(combined_query2, max_pages=5, per_page=100, orientation='landscape')
         filtered2 = filter_landscape(all_images2)
         st.session_state.attraction2_images = filtered2
         st.session_state.attraction2_total = len(filtered2)
@@ -400,27 +511,18 @@ def main():
                 img_cols2 = st.columns(len(page_images2))
                 for i, img_data in enumerate(page_images2):
                     with img_cols2[i]:
-                        thumb_url = None
-                        if "display_sizes" in img_data:
-                            for size in img_data["display_sizes"]:
-                                if size["name"] == "thumb":
-                                    thumb_url = size["uri"]
-                                    break
+                        thumb_url = get_thumbnail_url(img_data)
                         if thumb_url:
                             st.image(thumb_url)
                         else:
                             st.write("No thumbnail available")
                         if st.button("Select", key=f"select_attr2_page{page2}_{i}"):
-                            comp_url = None
-                            if "display_sizes" in img_data:
-                                for size in img_data["display_sizes"]:
-                                    if size["name"] == "comp":
-                                        comp_url = size["uri"]
-                                        break
+                            comp_url = get_largest_image_url(img_data)
                             st.session_state.selected_attraction2_image = comp_url or thumb_url
-                            st.session_state.selected_attraction2_photographer = img_data.get("title", "Getty Images")
+                            st.session_state.selected_attraction2_photographer = get_image_source(img_data)
                             st.session_state.selected_attraction2_image_data = img_data
-                # Pagination for second attraction
+
+                # Pagination arrows for second attraction section
                 pages2 = (len(images2) // per_page2) + (1 if len(images2) % per_page2 > 0 else 0)
                 col_btn1, col_btn2, col_spacer = st.columns([1, 1, 8])
                 with col_btn1:
@@ -439,8 +541,8 @@ def main():
             if full_url:
                 st.image(full_url, width=800)
             st.write("Image:", st.session_state.selected_attraction2_photographer)
-            st.write("Source: Getty Images")
-
+            st.write("Source:", st.session_state.selected_attraction2_photographer)
 
 if __name__ == "__main__":
     main()
+
