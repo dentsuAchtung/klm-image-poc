@@ -180,14 +180,21 @@ def get_largest_image_url(img_data):
 
 # Function to get the photographer/source (for Getty and Unsplash)
 def get_image_source(img_data):
-    """Get the source/photographer for Getty and Unsplash images."""
+    """Get the image description and source for Getty and Unsplash images."""
+    image_description = ""
+    source = ""
+
     if 'title' in img_data:  # Getty Images
-        return "Getty"
+        image_description = img_data.get('title', 'No description available')
+        source = "Getty Images"
     elif 'user' in img_data:  # Unsplash Images
+        image_description = img_data.get('alt_description', 'No description available')
         photographer_name = img_data['user']['name']
         photographer_profile = img_data['user']['links']['html']
-        return f"Photo by [@{photographer_name}]({photographer_profile}) on Unsplash"
-    return "Unknown Source"
+        source = f"Photo by [@{photographer_name}]({photographer_profile}) on Unsplash"
+    
+    return f"Image: {image_description}\n\nSource: {source}"
+
 
 def filter_portrait(images, orientation='portrait'):
     """Filter portrait images from Getty and Unsplash."""
@@ -378,8 +385,9 @@ def main():
             full_url = get_largest_image_url(st.session_state.selected_city_image_data)
             if full_url:
                 st.image(full_url, width=800)
-            st.write("Image:", st.session_state.selected_city_photographer)
-            st.write("Source:", st.session_state.selected_city_photographer)
+            image_source = get_image_source(st.session_state.selected_city_image_data)  # Get formatted description and source
+            st.markdown(image_source)  # Display the image description and source with hyperlink
+
 
     # ========== First Attraction Search Section ==========
     st.subheader("Search Highlight Attraction")
@@ -457,15 +465,15 @@ def main():
                     if st.button("▶", key="attr_next") and page < pages:
                         st.session_state.attraction_page += 1
                         st.rerun()
-
     with highlight_col:
         st.write("**Highlight (Full Size)**")
         if st.session_state.selected_attraction_image_data:
             full_url = get_largest_image_url(st.session_state.selected_attraction_image_data)
             if full_url:
                 st.image(full_url, width=800)
-            st.write("Image:", st.session_state.selected_attraction_photographer)
-            st.write("Source:", st.session_state.selected_attraction_photographer)
+            image_source = get_image_source(st.session_state.selected_attraction_image_data)  # Get formatted description and source
+            st.markdown(image_source)  # Display the image description and source with hyperlink
+
 
     # ========== Second Attraction Search Section ==========
     st.subheader("Search Second Highlight Attraction")
@@ -534,14 +542,16 @@ def main():
                         st.session_state.attraction2_page += 1
                         st.rerun()
 
+
     with highlight2_col:
         st.write("**Highlight 2 (Full Size)**")
         if st.session_state.selected_attraction2_image_data:
             full_url = get_largest_image_url(st.session_state.selected_attraction2_image_data)
             if full_url:
                 st.image(full_url, width=800)
-            st.write("Image:", st.session_state.selected_attraction2_photographer)
-            st.write("Source:", st.session_state.selected_attraction2_photographer)
+            image_source = get_image_source(st.session_state.selected_attraction2_image_data)  # Get formatted description and source
+            st.markdown(image_source)  # Display the image description and source with hyperlink
+
 
 if __name__ == "__main__":
     main()
