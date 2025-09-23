@@ -62,7 +62,7 @@ def get_access_token():
         return None
 
 # Fetch images from Getty and Unsplash together
-def fetch_images(query, page=1, per_page=100, orientation='landscape'):
+def fetch_images(query, page=1, per_page=30, orientation='landscape'):
     """Fetch images from Getty and Unsplash for a query."""
     # Fetch Getty images
     token = get_access_token()
@@ -122,7 +122,7 @@ def fetch_images(query, page=1, per_page=100, orientation='landscape'):
         st.error(f"Unsplash API error {unsplash_response.status_code}: {unsplash_response.text}")
 
     # Combine Getty and Unsplash images
-    combined_images = getty_images + unsplash_images
+    combined_images = unsplash_images + getty_images
     return combined_images
 
 def filter_images(images):
@@ -142,7 +142,7 @@ def filter_images(images):
 
 
 # Fetch multiple pages of images (adjusted)
-def fetch_many_images(query, max_pages=5, per_page=100, orientation='landscape'):
+def fetch_many_images(query, max_pages=20, per_page=30, orientation='landscape'):
     """Fetch multiple pages of results from Getty and Unsplash for a query."""
     all_images = []
     for page in range(1, max_pages + 1):
@@ -348,7 +348,7 @@ def main():
         st.session_state.city_query = st.session_state.city_input_value
         st.session_state.city_input_prev = st.session_state.city_input_value
         st.session_state.city_page = 1
-        all_images = fetch_many_images(st.session_state.city_query, max_pages=20, per_page=100, orientation='portrait')
+        all_images = fetch_many_images(st.session_state.city_query, max_pages=20, per_page=30, orientation='portrait')
         filtered = filter_portrait(all_images)
         st.session_state.city_images = filtered
         st.session_state.city_total = len(filtered)
@@ -365,7 +365,7 @@ def main():
                 st.write(f"Showing **{st.session_state.city_query}**, page {st.session_state.city_page}")
                 images = st.session_state.city_images
                 page = st.session_state.city_page
-                per_page = 5
+                per_page = 3
                 start = (page - 1) * per_page
                 end = start + per_page
                 page_images = images[start:end]
@@ -429,7 +429,7 @@ def main():
         encoded_query = urllib.parse.quote_plus(combined_query)
 
         # Fetch images from Getty and Unsplash with the encoded query
-        all_images = fetch_many_images(encoded_query, max_pages=20, per_page=100, orientation='landscape')
+        all_images = fetch_many_images(encoded_query, max_pages=20, per_page=30, orientation='landscape')
         filtered = filter_landscape(all_images)
         st.session_state.attraction_images = filtered
         st.session_state.attraction_total = len(filtered)
@@ -452,7 +452,7 @@ def main():
                 )
                 images = st.session_state.attraction_images
                 page = st.session_state.attraction_page
-                per_page = 5
+                per_page = 3
                 start = (page - 1) * per_page
                 end = start + per_page
                 page_images = images[start:end]
@@ -508,7 +508,7 @@ def main():
         st.session_state.attraction2_input_prev = st.session_state.attraction2_input_value
         st.session_state.attraction2_page = 1
         combined_query2 = f"{st.session_state.city_query} {st.session_state.attraction2_query}".strip()
-        all_images2 = fetch_many_images(combined_query2, max_pages=20, per_page=100, orientation='landscape')
+        all_images2 = fetch_many_images(combined_query2, max_pages=20, per_page=30, orientation='landscape')
         filtered2 = filter_landscape(all_images2)
         st.session_state.attraction2_images = filtered2
         st.session_state.attraction2_total = len(filtered2)
@@ -528,7 +528,7 @@ def main():
                 )
                 images2 = st.session_state.attraction2_images
                 page2 = st.session_state.attraction2_page
-                per_page2 = 5
+                per_page2 = 3
                 start2 = (page2 - 1) * per_page2
                 end2 = start2 + per_page2
                 page_images2 = images2[start2:end2]
