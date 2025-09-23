@@ -100,7 +100,7 @@ def fetch_images(query, page=1, per_page=100, orientation='landscape'):
 
     if orientation == 'portrait':
         unsplash_params = {
-            "query": encoded_query,
+            "query": f"{encoded_query} ",
             "page": page,  # Include page number for pagination
             "per_page": per_page,  # Number of images per page
             # Do not pass 'orientation' to Unsplash for city search, we'll filter later
@@ -108,7 +108,7 @@ def fetch_images(query, page=1, per_page=100, orientation='landscape'):
     else:
         # For the attraction section, only fetch landscape
         unsplash_params = {
-            "query": encoded_query,
+            "query": f"{encoded_query} ",
             "page": page,
             "per_page": per_page,
             "orientation": orientation  # Apply landscape filter for attractions
@@ -124,6 +124,22 @@ def fetch_images(query, page=1, per_page=100, orientation='landscape'):
     # Combine Getty and Unsplash images
     combined_images = getty_images + unsplash_images
     return combined_images
+
+def filter_images(images):
+    filtered_images = []
+    # Add keywords and their plural forms or related terms
+    exclude_keywords = ['person', 'people', 'man', 'woman', 'boy', 'girl', 'logo', 'brand', 'advertisement', 'face', 'group']
+
+    for image in images:
+        description = image.get('alt_description', '').lower()  # Convert description to lowercase
+        tags = [tag['title'].lower() for tag in image.get('tags', [])]  # Convert tags to lowercase
+
+        # Check if any exclusion keyword exists in the description or tags
+        if not any(keyword in description or keyword in tags for keyword in exclude_keywords):
+            filtered_images.append(image)
+
+    return filtered_images
+
 
 # Fetch multiple pages of images (adjusted)
 def fetch_many_images(query, max_pages=5, per_page=100, orientation='landscape'):
@@ -332,7 +348,7 @@ def main():
         st.session_state.city_query = st.session_state.city_input_value
         st.session_state.city_input_prev = st.session_state.city_input_value
         st.session_state.city_page = 1
-        all_images = fetch_many_images(st.session_state.city_query, max_pages=5, per_page=100, orientation='portrait')
+        all_images = fetch_many_images(st.session_state.city_query, max_pages=20, per_page=100, orientation='portrait')
         filtered = filter_portrait(all_images)
         st.session_state.city_images = filtered
         st.session_state.city_total = len(filtered)
@@ -413,7 +429,7 @@ def main():
         encoded_query = urllib.parse.quote_plus(combined_query)
 
         # Fetch images from Getty and Unsplash with the encoded query
-        all_images = fetch_many_images(encoded_query, max_pages=5, per_page=100, orientation='landscape')
+        all_images = fetch_many_images(encoded_query, max_pages=20, per_page=100, orientation='landscape')
         filtered = filter_landscape(all_images)
         st.session_state.attraction_images = filtered
         st.session_state.attraction_total = len(filtered)
@@ -492,7 +508,7 @@ def main():
         st.session_state.attraction2_input_prev = st.session_state.attraction2_input_value
         st.session_state.attraction2_page = 1
         combined_query2 = f"{st.session_state.city_query} {st.session_state.attraction2_query}".strip()
-        all_images2 = fetch_many_images(combined_query2, max_pages=5, per_page=100, orientation='landscape')
+        all_images2 = fetch_many_images(combined_query2, max_pages=20, per_page=100, orientation='landscape')
         filtered2 = filter_landscape(all_images2)
         st.session_state.attraction2_images = filtered2
         st.session_state.attraction2_total = len(filtered2)
