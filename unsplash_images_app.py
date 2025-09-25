@@ -62,68 +62,71 @@ def get_access_token():
         return None
 
 # Fetch images from Getty and Unsplash together
-def fetch_images(query, page=1, per_page=100, orientation='landscape'):
-    """Fetch images from Getty and Unsplash for a query."""
-    # Fetch Getty images
-    token = get_access_token()
-    if not token:
-        return []
+def fetch_images(query, page=1, per_page=100, orientation='landscape', use_unsplash=True):
 
-    # Getty API request
-    getty_url = "https://api.gettyimages.com/v3/search/images/creative"
-    headers = {
-        "Api-Key": api_key,
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json"
-    }
-    params = {
-        "phrase": query,
-        "page": page,
-        "page_size": per_page,
-        "fields": "id,title,thumb,preview,comp,display_sizes,max_dimensions"
-    }
+    if use_unsplash == False:
+        # Fetch Getty images
+        token = get_access_token()
+        if not token:
+            return []
 
-    getty_response = requests.get(getty_url, headers=headers, params=params)
-    getty_images = []
-    if getty_response.status_code == 200:
-        getty_images = getty_response.json().get("images", [])
-    else:
-        st.error(f"Getty Images API error {getty_response.status_code}: {getty_response.text}")
-
-    # Fetch Unsplash images
-    unsplash_url = "https://api.unsplash.com/search/photos"
-    unsplash_headers = {
-        "Authorization": f"Client-ID {unsplash_access_key}"
-    }
-
-    encoded_query = urllib.parse.quote_plus(query)
-
-    if orientation == 'portrait':
-        unsplash_params = {
-            "query": f"{encoded_query} ",
-            "page": page,  # Include page number for pagination
-            "per_page": per_page,  # Number of images per page
-            # Do not pass 'orientation' to Unsplash for city search, we'll filter later
+        # Getty API request
+        getty_url = "https://api.gettyimages.com/v3/search/images/creative"
+        headers = {
+            "Api-Key": api_key,
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json"
         }
-    else:
-        # For the attraction section, only fetch landscape
-        unsplash_params = {
-            "query": f"{encoded_query} ",
+        params = {
+            "phrase": query,
             "page": page,
-            "per_page": 100,
-            "orientation": orientation  # Apply landscape filter for attractions
+            "page_size": per_page,
+            "fields": "id,title,thumb,preview,comp,display_sizes,max_dimensions"
         }
 
-    unsplash_response = requests.get(unsplash_url, headers=unsplash_headers, params=unsplash_params)
-    unsplash_images = []
-    if unsplash_response.status_code == 200:
-        unsplash_images = unsplash_response.json().get("results", [])
-    else:
-        st.error(f"Unsplash API error {unsplash_response.status_code}: {unsplash_response.text}")
+        getty_response = requests.get(getty_url, headers=headers, params=params)
+        getty_images = []
+        if getty_response.status_code == 200:
+            getty_images = getty_response.json().get("images", [])
+        else:
+            st.error(f"Getty Images API error {getty_response.status_code}: {getty_response.text}")
 
-    # Combine Getty and Unsplash images
-    combined_images = unsplash_images + getty_images
-    return combined_images
+        return getty_images
+
+    else:
+        # Fetch Unsplash images
+        unsplash_url = "https://api.unsplash.com/search/photos"
+        unsplash_headers = {
+            "Authorization": f"Client-ID {unsplash_access_key}"
+        }
+
+        encoded_query = urllib.parse.quote_plus(query)
+
+        if orientation == 'portrait':
+            unsplash_params = {
+                "query": f"{encoded_query} ",
+                "page": page,  # Include page number for pagination
+                "per_page": per_page,  # Number of images per page
+                # Do not pass 'orientation' to Unsplash for city search, we'll filter later
+            }
+        else:
+            # For the attraction section, only fetch landscape
+            unsplash_params = {
+                "query": f"{encoded_query} ",
+                "page": page,
+                "per_page": 100,
+                "orientation": orientation  # Apply landscape filter for attractions
+            }
+
+        unsplash_response = requests.get(unsplash_url, headers=unsplash_headers, params=unsplash_params)
+        unsplash_images = []
+        if unsplash_response.status_code == 200:
+            unsplash_images = unsplash_response.json().get("results", [])
+        else:
+            st.error(f"Unsplash API error {unsplash_response.status_code}: {unsplash_response.text}")
+
+        # Combine Getty and Unsplash images
+        return unsplash_images
 
 def filter_images(images):
     filtered_images = []
@@ -162,11 +165,11 @@ def filter_images(images):
 
 
 # Fetch multiple pages of images (adjusted)
-def fetch_many_images(query, max_pages=15, per_page=100, orientation='landscape'):
+def fetch_many_images(query, max_pages=15, per_page=100, orientation='landscape', use_unsplash=True):
     """Fetch multiple pages of results from Getty and Unsplash for a query."""
     all_images = []
     for page in range(1, max_pages + 1):
-        images = fetch_images(query, page=page, per_page=per_page, orientation=orientation)
+        images = fetch_images(query, page=page, per_page=per_page, orientation=orientation, use_unsplash=use_unsplash)
         if not images:
             break
         all_images.extend(images)
@@ -279,6 +282,8 @@ def main():
     st.set_page_config(layout="wide")
     st.title("Things to see | Image Selection ")
 
+    use_unsplash = st.checkbox("Use Unsplash", value=True)
+
     # --- Custom CSS to style expanders and buttons ---
     st.markdown(
         """
@@ -368,7 +373,7 @@ def main():
         st.session_state.city_query = st.session_state.city_input_value
         st.session_state.city_input_prev = st.session_state.city_input_value
         st.session_state.city_page = 1
-        all_images = fetch_many_images(st.session_state.city_query, max_pages=15, per_page=100, orientation='portrait')
+        all_images = fetch_many_images(st.session_state.city_query, max_pages=15, per_page=100, orientation='portrait', use_unsplash=use_unsplash)
         filtered = filter_portrait(all_images)
         st.session_state.city_images = filtered
         st.session_state.city_total = len(filtered)
@@ -449,7 +454,7 @@ def main():
         encoded_query = urllib.parse.quote_plus(combined_query)
 
         # Fetch images from Getty and Unsplash with the encoded query
-        all_images = fetch_many_images(encoded_query, max_pages=15, per_page=100, orientation='landscape')
+        all_images = fetch_many_images(encoded_query, max_pages=15, per_page=100, orientation='landscape', use_unsplash=use_unsplash)
         filtered = filter_landscape(all_images)
         st.session_state.attraction_images = filtered
         st.session_state.attraction_total = len(filtered)
@@ -528,7 +533,7 @@ def main():
         st.session_state.attraction2_input_prev = st.session_state.attraction2_input_value
         st.session_state.attraction2_page = 1
         combined_query2 = f"{st.session_state.city_query} {st.session_state.attraction2_query}".strip()
-        all_images2 = fetch_many_images(combined_query2, max_pages=15, per_page=100, orientation='landscape')
+        all_images2 = fetch_many_images(combined_query2, max_pages=15, per_page=100, orientation='landscape', use_unsplash=use_unsplash)
         filtered2 = filter_landscape(all_images2)
         st.session_state.attraction2_images = filtered2
         st.session_state.attraction2_total = len(filtered2)
@@ -592,3 +597,4 @@ def main():
 if __name__ == "__main__":
     main()
 
+# imageproc\Scripts\activate && streamlit run unsplash_images_app.py
